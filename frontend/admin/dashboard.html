@@ -23,7 +23,11 @@
         .btn-danger { background: var(--danger-color); color: white; }
         input { padding: 12px; border: 1px solid #ddd; border-radius: 6px; width: 100%; margin-bottom: 10px; box-sizing: border-box; }
         
-        /* Style cho ảnh món ăn */
+        /* Style cho nút chọn file */
+        .file-input-wrapper { margin-bottom: 15px; }
+        .file-input-label { display: block; margin-bottom: 5px; font-weight: bold; color: #555; font-size: 0.9em; }
+        input[type="file"] { padding: 8px; background: #fff; border: 1px dashed var(--primary-color); }
+
         .product-img-preview { width: 50px; height: 50px; border-radius: 8px; object-fit: cover; margin-right: 15px; background: #eee; }
         .product-info { display: flex; align-items: center; }
         
@@ -59,7 +63,12 @@
                 <h3>Thêm món mới</h3>
                 <input type="text" id="p-name" placeholder="Tên món (ví dụ: Cà phê muối)">
                 <input type="number" id="p-price" placeholder="Giá (ví dụ: 25000)">
-                <input type="text" id="p-image" placeholder="Link hình ảnh (dán link từ web hoặc kho ảnh)">
+                
+                <div class="file-input-wrapper">
+                    <label class="file-input-label">Chọn ảnh từ máy (Dưới 1MB):</label>
+                    <input type="file" id="p-image-file" accept="image/*">
+                </div>
+                
                 <button class="btn btn-success" onclick="addProduct()">Lưu vào Menu</button>
             </div>
             <div class="card">
@@ -180,24 +189,46 @@
             `).join('');
         }
 
+        // HÀM MỚI: Xử lý chọn ảnh từ máy
         async function addProduct() {
             const name = document.getElementById('p-name').value;
             const price = document.getElementById('p-price').value;
-            const image = document.getElementById('p-image').value;
+            const fileInput = document.getElementById('p-image-file');
             
             if(!name || !price) return alert("Việt ơi, nhập đủ tên và giá nhé!");
+
+            let base64Image = "";
+
+            if (fileInput.files.length > 0) {
+                const file = fileInput.files[0];
+                if (file.size > 1024 * 1024) {
+                    return alert("Ảnh nặng quá Việt ơi! Chọn ảnh dưới 1MB cho mượt nhé.");
+                }
+
+                base64Image = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result);
+                    reader.readAsDataURL(file);
+                });
+            }
             
-            await fetch(`${API_BASE}/api/admin/products`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ name, price: parseInt(price), image: image })
-            });
-            
-            // Xóa trắng ô nhập sau khi lưu
-            document.getElementById('p-name').value = "";
-            document.getElementById('p-price').value = "";
-            document.getElementById('p-image').value = "";
-            loadProductMgmt();
+            try {
+                const res = await fetch(`${API_BASE}/api/admin/products`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ name, price: parseInt(price), image: base64Image })
+                });
+
+                if (res.ok) {
+                    alert("✅ Đã thêm món mới thành công!");
+                    document.getElementById('p-name').value = "";
+                    document.getElementById('p-price').value = "";
+                    document.getElementById('p-image-file').value = "";
+                    loadProductMgmt();
+                }
+            } catch (e) {
+                alert("❌ Lỗi kết nối server rồi!");
+            }
         }
 
         async function deleteProduct(name) {
