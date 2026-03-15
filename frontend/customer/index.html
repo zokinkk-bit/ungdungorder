@@ -24,7 +24,6 @@
             border-radius: 10px; cursor: pointer; font-weight: bold; transition: 0.3s;
         }
         button:active { transform: scale(0.9); background: #218838; }
-        .status-badge { font-size: 0.8em; padding: 4px 8px; border-radius: 5px; margin-top: 5px; }
     </style>
 </head>
 <body>
@@ -38,17 +37,10 @@
     </div>
 
     <script>
-        // --- 1. CẤU HÌNH LINK INTERNET ---
-        // Khi chạy trên Render, link sẽ có dạng https://tên-app.onrender.com
-        // Tự động nhận diện: Nếu chạy localhost thì dùng IP cũ, nếu chạy web thì dùng link Render
-        const API_BASE = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
-            ? "http://localhost:8000" 
-            : `https://${window.location.hostname.split('.')[0]}.onrender.com`.replace("static","api"); 
-        
-        // CÁCH THỦ CÔNG: Việt dán trực tiếp link Render của Việt vào đây cho chắc nhé:
-        // const API_BASE = "https://ungdungorder.onrender.com"; 
-
-        const WS_URL = API_BASE.replace("http", "ws");
+        // --- 1. CẤU HÌNH LINK RENDER ---
+        // Thay vì để nó tự đoán, mình dán trực tiếp link Render mà Việt vừa chạy thành công vào đây.
+        const API_BASE = "https://ungdungorder-1.onrender.com"; 
+        const WS_URL = API_BASE.replace("https", "wss"); // Dùng wss cho bảo mật khi chạy trên Render
 
         const params = new URLSearchParams(window.location.search);
         const tableNo = params.get('table') || "0";
@@ -57,23 +49,25 @@
         // --- 2. KẾT NỐI WEBSOCKET ---
         let socket;
         function connectWS() {
+            // Lưu ý: Route /ws/admin phải khớp với backend của Việt
             socket = new WebSocket(`${WS_URL}/ws/admin`);
             
             socket.onopen = () => {
                 document.getElementById('connection-status').innerText = "● Đã kết nối";
-                document.getElementById('connection-status').style.color = "#white";
+                document.getElementById('connection-status').style.color = "white";
             };
 
             socket.onmessage = function(event) {
                 const data = JSON.parse(event.data);
                 if (data.type === "menu_update") {
-                    loadMenu(); // Tự động load lại khi Admin đổi món/giá
+                    console.log("Thực đơn đã cập nhật từ Admin!");
+                    loadMenu(); 
                 }
             };
 
             socket.onclose = () => {
                 document.getElementById('connection-status').innerText = "○ Mất kết nối, đang thử lại...";
-                setTimeout(connectWS, 3000);
+                setTimeout(connectWS, 5000); // Thử lại sau 5 giây
             };
         }
 
@@ -81,6 +75,8 @@
         async function loadMenu() {
             try {
                 const res = await fetch(`${API_BASE}/api/products`);
+                if (!res.ok) throw new Error("Không lấy được dữ liệu");
+                
                 const products = await res.json();
                 const menuDiv = document.getElementById('menu');
                 
@@ -102,7 +98,8 @@
                     </div>
                 `).join('');
             } catch (error) {
-                document.getElementById('menu').innerHTML = "<p style='text-align:center; color:red;'>Lỗi kết nối. Việt hãy kiểm tra mạng nhé!</p>";
+                document.getElementById('menu').innerHTML = "<p style='text-align:center; color:red;'>Lỗi kết nối server Render!</p>";
+                console.error("Lỗi fetch menu:", error);
             }
         }
 
@@ -132,7 +129,7 @@
                     alert('❌ Lỗi: ' + (result.msg || 'Không thể đặt món.'));
                 }
             } catch (error) {
-                alert('❌ Server đang bận hoặc rớt mạng. Việt thử lại nhé!');
+                alert('❌ Không thể gửi đơn. Có thể Server Render đang khởi động lại, Việt đợi 30s rồi thử lại nhé!');
             }
         }
 
