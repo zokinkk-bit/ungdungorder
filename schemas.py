@@ -1,0 +1,1 @@
+# Định dạng dữ liệu Pydantic

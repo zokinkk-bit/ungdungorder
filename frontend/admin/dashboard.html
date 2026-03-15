@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Hệ thống Quản lý Order - Việt Admin</title>
+    <style>
+        :root { --primary-color: #007bff; --danger-color: #dc3545; --success-color: #28a745; --sidebar-bg: #1c1e21; }
+        body { display: flex; margin: 0; font-family: 'Segoe UI', sans-serif; background: #f0f2f5; min-height: 100vh; }
+        .sidebar { width: 260px; background: var(--sidebar-bg); color: white; display: flex; flex-direction: column; position: fixed; height: 100vh; }
+        .sidebar-header { padding: 20px; text-align: center; border-bottom: 1px solid #3a3b3c; font-weight: bold; font-size: 1.2em; }
+        .menu { flex: 1; padding: 10px; display: flex; flex-direction: column; }
+        .menu-item { padding: 15px; margin-bottom: 5px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 10px; transition: 0.3s; }
+        .menu-item:hover { background: #3a3b3c; }
+        .menu-item.active { background: var(--primary-color); }
+        .menu-item.danger { color: #ff6b6b; margin-top: auto; border-top: 1px solid #3a3b3c; }
+        .content { margin-left: 260px; flex: 1; padding: 30px; }
+        .page { display: none; }
+        .page.active { display: block; }
+        .card { background: white; border-radius: 12px; padding: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .list-item { background: white; border-radius: 10px; padding: 15px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .btn { padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        .btn-success { background: var(--success-color); color: white; }
+        .btn-danger { background: var(--danger-color); color: white; }
+        input { padding: 12px; border: 1px solid #ddd; border-radius: 6px; width: 100%; margin-bottom: 10px; box-sizing: border-box; }
+        
+        /* CSS cho lịch sử doanh thu */
+        #revenue-history { margin-top: 20px; }
+        .history-item { border-left: 5px solid var(--success-color); }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <div class="sidebar-header">VIỆT ORDER ADMIN</div>
+        <div class="menu">
+            <div class="menu-item active" onclick="switchPage('page-orders', this)">📦 Đơn hàng mới</div>
+            <div class="menu-item" onclick="switchPage('page-menu-mgmt', this); loadProductMgmt();">🍴 Quản lý Menu</div>
+            <div class="menu-item" onclick="switchPage('page-revenue', this); loadRevenue();">💰 Doanh thu</div>
+            <div class="menu-item danger" onclick="switchPage('page-reset', this)">⚠️ Reset Dữ liệu</div>
+        </div>
+    </div>
+
+    <div class="content">
+        <div id="page-orders" class="page active">
+            <h1>📋 Đơn hàng mới</h1>
+            <ul id="order-list"></ul>
+        </div>
+        
+        <div id="page-menu-mgmt" class="page">
+            <h1>🍴 Quản lý thực đơn</h1>
+            <div class="card">
+                <input type="text" id="p-name" placeholder="Tên món">
+                <input type="number" id="p-price" placeholder="Giá">
+                <button class="btn btn-success" onclick="addProduct()">Lưu món</button>
+            </div>
+            <div class="card"><ul id="product-list-admin"></ul></div>
+        </div>
+
+        <div id="page-revenue" class="page">
+            <h1>💰 Thống kê doanh thu</h1>
+            <div class="card">
+                <h2>Tổng doanh thu: <span id="total-revenue" style="color: var(--success-color);">0</span>đ</h2>
+            </div>
+            <h3>Lịch sử đơn hàng đã bán:</h3>
+            <div id="revenue-history"></div>
+        </div>
+
+        <div id="page-reset" class="page">
+            <h1>⚠️ Reset hệ thống</h1>
+            <div class="card">
+                <p style="color: #666;">Nhập mật khẩu để xóa sạch lịch sử đơn hàng và doanh thu.</p>
+                <input type="password" id="reset-password" placeholder="Mật khẩu Admin (mặc định: 123)">
+                <button class="btn btn-danger" onclick="handleReset()">Xác nhận xóa sạch đơn</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Lấy IP tự động hoặc dùng localhost
+        const HOST = window.location.hostname || "localhost";
+        const API_BASE = `http://${HOST}:8000`;
+        const socket = new WebSocket(`ws://${HOST}:8000/ws/admin`);
+
+        let displayedOrders = new Set();
+
+        window.onload = () => { loadPendingOrders(); };
+
+        async function loadPendingOrders() {
+            try {
+                const response = await fetch(`${API_BASE}/api/admin/pending-orders`);
+                if (response.ok) {
+                    const orders = await response.json();
+                    orders.forEach(order => addOrderToUI(order));
+                }
+            } catch (e) { console.error("Lỗi khi load đơn hàng:", e); }
+        }
+
+        function switchPage(pageId, element) {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
+            document.getElementById(pageId).classList.add('active');
+            element.classList.add('active');
+            
+            if(pageId === 'page-revenue') loadRevenue();
+            if(pageId === 'page-menu-mgmt') loadProductMgmt();
+        }
+
+        socket.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            if (data.type === "new_order") {
+                addOrderToUI(data);
+                new Audio('https://www.soundjay.com/buttons/beep-01a.mp3').play().catch(()=>{});
+            }
+        };
+
+        function addOrderToUI(data) {
+            if (displayedOrders.has(data.id)) return;
+
+            const list = document.getElementById('order-list');
+            const li = document.createElement('li');
+            li.className = 'list-item';
+            li.id = `order-${data.id}`;
+            
+            const name = data.item_name || data.item;
+
+            li.innerHTML = `
+                <div>
+                    <strong>Bàn ${data.table}</strong>: ${name} (x${data.quantity || 1})<br>
+                    <small style="color: #666;">Lúc: ${data.time || ''}</small>
+                </div>
+                <button class="btn btn-success" onclick="markDone(${data.id})">Xong</button>
+            `;
+            list.prepend(li);
+            displayedOrders.add(data.id);
+        }
+
+        async function markDone(id) {
+            const res = await fetch(`${API_BASE}/api/orders/${id}/complete`, { method: 'POST' });
+            if (res.ok) {
+                const element = document.getElementById(`order-${id}`);
+                if (element) element.remove();
+                displayedOrders.delete(id);
+                if(document.getElementById('page-revenue').classList.contains('active')) loadRevenue();
+            }
+        }
+
+        async function loadProductMgmt() {
+            const res = await fetch(`${API_BASE}/api/products`);
+            const products = await res.json();
+            document.getElementById('product-list-admin').innerHTML = products.map(p => `
+                <li class="list-item">
+                    <span>${p.name} - ${p.price.toLocaleString()}đ</span>
+                    <button class="btn btn-danger" onclick="deleteProduct('${p.name}')">Xóa</button>
+                </li>
+            `).join('');
+        }
+
+        async function addProduct() {
+            const name = document.getElementById('p-name').value;
+            const price = document.getElementById('p-price').value;
+            if(!name || !price) return alert("Nhập đủ tên và giá!");
+            await fetch(`${API_BASE}/api/admin/products`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ name, price })
+            });
+            document.getElementById('p-name').value = "";
+            document.getElementById('p-price').value = "";
+            loadProductMgmt();
+        }
+
+        async function deleteProduct(name) {
+            if (!confirm(`Xóa món "${name}"?`)) return;
+            const res = await fetch(`${API_BASE}/api/admin/products/${encodeURIComponent(name)}`, { method: 'DELETE' });
+            if (res.ok) loadProductMgmt();
+        }
+
+        async function loadRevenue() {
+            try {
+                const res = await fetch(`${API_BASE}/api/admin/revenue`);
+                const data = await res.json();
+                document.getElementById('total-revenue').innerText = data.revenue.toLocaleString();
+                
+                const historyDiv = document.getElementById('revenue-history');
+                if (data.history && data.history.length > 0) {
+                    historyDiv.innerHTML = data.history.map(item => `
+                        <div class="list-item history-item">
+                            <div>
+                                <strong>Bàn ${item.table}</strong>: ${item.item} (x${item.qty})<br>
+                                <small style="color: #888;">${item.time}</small>
+                            </div>
+                            <div style="font-weight: bold; color: var(--success-color);">
+                                +${item.amount.toLocaleString()}đ
+                            </div>
+                        </div>
+                    `).reverse().join('');
+                } else {
+                    historyDiv.innerHTML = "<p style='text-align:center; color:#888;'>Chưa có đơn hàng nào hoàn thành.</p>";
+                }
+            } catch (e) { console.error("Lỗi load doanh thu:", e); }
+        }
+
+        async function handleReset() {
+            const password = document.getElementById('reset-password').value;
+            if(!password) return alert("Vui lòng nhập mật khẩu!");
+
+            if(!confirm("Bạn có chắc chắn muốn XÓA SẠCH toàn bộ đơn hàng và doanh thu?")) return;
+
+            const res = await fetch(`${API_BASE}/api/admin/reset`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ password })
+            });
+
+            if (res.ok) {
+                alert("✅ Đã xóa toàn bộ dữ liệu thành công!");
+                location.reload();
+            } else { 
+                alert("❌ Sai mật khẩu Admin! Không thể xóa dữ liệu."); 
+                document.getElementById('reset-password').value = "";
+            }
+        }
+    </script>
+</body>
+</html>

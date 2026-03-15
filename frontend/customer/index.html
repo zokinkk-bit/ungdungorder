@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Menu Gọi Món - Việt Admin</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; padding: 15px; background: #f8f9fa; color: #333; margin: 0; }
+        .header { text-align: center; color: white; background: #28a745; padding: 20px; border-radius: 0 0 20px 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .item { 
+            background: white; padding: 15px; margin-bottom: 12px; border-radius: 12px; 
+            display: flex; justify-content: space-between; align-items: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .item-info { display: flex; flex-direction: column; }
+        .item-name { font-weight: bold; font-size: 1.1em; }
+        .item-price { color: #28a745; font-weight: bold; margin-top: 5px; }
+        
+        .order-controls { display: flex; align-items: center; gap: 10px; }
+        input[type="number"] { width: 45px; padding: 8px; border: 1px solid #ddd; border-radius: 8px; text-align: center; font-size: 1em; }
+        
+        button { 
+            background: #28a745; color: white; border: none; padding: 10px 18px; 
+            border-radius: 10px; cursor: pointer; font-weight: bold; transition: 0.3s;
+        }
+        button:active { transform: scale(0.9); background: #218838; }
+        .status-badge { font-size: 0.8em; padding: 4px 8px; border-radius: 5px; margin-top: 5px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h2 style="margin:0;">Bàn số: <span id="table-display">...</span></h2>
+        <small id="connection-status" style="opacity: 0.8;">Đang kết nối server...</small>
+    </div>
+    
+    <div id="menu" style="padding: 10px;">
+        <p style="text-align: center;">Đang tải thực đơn xịn xò...</p>
+    </div>
+
+    <script>
+        // --- 1. CẤU HÌNH LINK INTERNET ---
+        // Khi chạy trên Render, link sẽ có dạng https://tên-app.onrender.com
+        // Tự động nhận diện: Nếu chạy localhost thì dùng IP cũ, nếu chạy web thì dùng link Render
+        const API_BASE = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+            ? "http://localhost:8000" 
+            : `https://${window.location.hostname.split('.')[0]}.onrender.com`.replace("static","api"); 
+        
+        // CÁCH THỦ CÔNG: Việt dán trực tiếp link Render của Việt vào đây cho chắc nhé:
+        // const API_BASE = "https://ungdungorder.onrender.com"; 
+
+        const WS_URL = API_BASE.replace("http", "ws");
+
+        const params = new URLSearchParams(window.location.search);
+        const tableNo = params.get('table') || "0";
+        document.getElementById('table-display').innerText = tableNo;
+
+        // --- 2. KẾT NỐI WEBSOCKET ---
+        let socket;
+        function connectWS() {
+            socket = new WebSocket(`${WS_URL}/ws/admin`);
+            
+            socket.onopen = () => {
+                document.getElementById('connection-status').innerText = "● Đã kết nối";
+                document.getElementById('connection-status').style.color = "#white";
+            };
+
+            socket.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                if (data.type === "menu_update") {
+                    loadMenu(); // Tự động load lại khi Admin đổi món/giá
+                }
+            };
+
+            socket.onclose = () => {
+                document.getElementById('connection-status').innerText = "○ Mất kết nối, đang thử lại...";
+                setTimeout(connectWS, 3000);
+            };
+        }
+
+        // --- 3. HÀM LẤY MENU ---
+        async function loadMenu() {
+            try {
+                const res = await fetch(`${API_BASE}/api/products`);
+                const products = await res.json();
+                const menuDiv = document.getElementById('menu');
+                
+                if (products.length === 0) {
+                    menuDiv.innerHTML = "<p style='text-align:center;'>Chưa có món nào. Đợi Admin xíu nhé!</p>";
+                    return;
+                }
+
+                menuDiv.innerHTML = products.map((p, index) => `
+                    <div class="item">
+                        <div class="item-info">
+                            <span class="item-name">${p.name}</span>
+                            <span class="item-price">${p.price.toLocaleString()}đ</span>
+                        </div>
+                        <div class="order-controls">
+                            <input type="number" id="qty-${index}" value="1" min="1">
+                            <button onclick="order('${p.name}', 'qty-${index}')">Đặt</button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                document.getElementById('menu').innerHTML = "<p style='text-align:center; color:red;'>Lỗi kết nối. Việt hãy kiểm tra mạng nhé!</p>";
+            }
+        }
+
+        // --- 4. HÀM ĐẶT MÓN ---
+        async function order(itemName, qtyId) {
+            const quantity = document.getElementById(qtyId).value;
+            if (quantity < 1) return alert("Số lượng phải ít nhất là 1 chứ!");
+
+            const data = {
+                table: tableNo,
+                item: itemName,
+                quantity: parseInt(quantity)
+            };
+
+            try {
+                const response = await fetch(`${API_BASE}/api/order`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.status === "success") {
+                    alert(`✅ Tuyệt vời! Đã báo Admin làm ${quantity} ${itemName} cho Bàn ${tableNo} rồi nhé.`);
+                } else {
+                    alert('❌ Lỗi: ' + (result.msg || 'Không thể đặt món.'));
+                }
+            } catch (error) {
+                alert('❌ Server đang bận hoặc rớt mạng. Việt thử lại nhé!');
+            }
+        }
+
+        // Khởi động
+        connectWS();
+        loadMenu();
+    </script>
+</body>
+</html>

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Thiết lập Admin - Việt Order</title>
+    <style>
+        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background: #f0f2f5; margin: 0; }
+        .setup-card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: 350px; }
+        h2 { text-align: center; color: #1c1e21; }
+        input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #0056b3; }
+        .msg { font-size: 0.9em; text-align: center; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="setup-card">
+        <h2>Khởi tạo Admin</h2>
+        <p class="msg" id="status-msg">Đang kiểm tra hệ thống...</p>
+        <div id="setup-form" style="display: none;">
+            <input type="text" id="username" placeholder="Tên đăng nhập (Admin)">
+            <input type="password" id="password" placeholder="Mật khẩu bảo mật">
+            <button onclick="register()">Tạo tài khoản duy nhất</button>
+        </div>
+    </div>
+
+    <script>
+        const SERVER_IP = "192.168.1.2";
+
+        // Kiểm tra xem đã có admin chưa khi vừa mở trang
+        async function checkStatus() {
+            const res = await fetch(`http://${SERVER_IP}:8000/api/admin/check`);
+            const data = await res.json();
+            if (data.exists) {
+                document.getElementById('status-msg').innerHTML = "<b style='color:red'>Hệ thống đã có Admin. Không thể tạo thêm!</b>";
+            } else {
+                document.getElementById('status-msg').innerText = "Vui lòng thiết lập tài khoản quản trị.";
+                document.getElementById('setup-form').style.display = 'block';
+            }
+        }
+
+        async function register() {
+            const user = document.getElementById('username').value;
+            const pass = document.getElementById('password').value;
+            
+            if(!user || !pass) return alert("Vui lòng nhập đủ tin!");
+
+            const res = await fetch(`http://${SERVER_IP}:8000/api/admin/register`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username: user, password: pass})
+            });
+            const result = await res.json();
+            if(result.status === "success") {
+                alert("Tạo Admin thành công! Bây giờ bạn có thể dùng mật khẩu này để Reset dữ liệu.");
+                window.location.href = "dashboard.html";
+            } else {
+                alert(result.msg);
+            }
+        }
+        checkStatus();
+    </script>
+</body>
+</html>
