@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 import urllib.parse
 import json
+import os
 
 import models
 from database import engine, get_db
@@ -15,9 +16,10 @@ models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
+# --- CẤU HÌNH CORS (Rất quan trọng để GitHub Pages kết nối được) ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -37,21 +39,34 @@ class ConnectionManager:
             self.active_connections.remove(websocket)
 
     async def notify_all(self, message: dict):
+        # Tạo danh sách các kết nối lỗi để xóa sau khi lặp
+        dead_connections = []
         for connection in self.active_connections:
             try:
                 await connection.send_json(message)
             except:
-                pass
+                dead_connections.append(connection)
+        
+        for dead in dead_connections:
+            self.disconnect(dead)
 
 manager = ConnectionManager()
+
+# Thêm route mặc định để tránh lỗi "Not Found" khi vào trang chủ Render
+@app.get("/")
+def home():
+    return {"status": "Online", "message": "Viet Order Backend is running!"}
 
 @app.websocket("/ws/admin")
 async def admin_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            await websocket.receive_text()
+            # Giữ kết nối sống (Heartbeat)
+            data = await websocket.receive_text()
     except WebSocketDisconnect:
+        manager.disconnect(websocket)
+    except Exception:
         manager.disconnect(websocket)
 
 # --- API CHO KHÁCH HÀNG ---
@@ -141,12 +156,11 @@ def complete_order(order_id: int, db: Session = Depends(get_db)):
         else:
             order.status = "completed"
             db.commit()
-            return {"status": "error", "msg": "Không tìm thấy món trong Menu để lấy giá"}
+            return {"status": "error", "msg": "Không tìm thấy giá món"}
     return {"status": "error"}
 
 @app.get("/api/admin/revenue")
 def get_revenue(db: Session = Depends(get_db)):
-    # Lấy danh sách các đơn đã xong để hiện chi tiết
     orders = db.query(models.Order).filter(models.Order.status == "completed").all()
     total = sum(order.total_price for order in orders)
     
@@ -165,7 +179,7 @@ def get_revenue(db: Session = Depends(get_db)):
 
 @app.post("/api/admin/reset")
 def reset_data(data: dict, db: Session = Depends(get_db)):
-    # MẬT KHẨU ADMIN LÀ: 123
+    # Đã sửa mật khẩu theo ý của bạn: huyhieu123
     if data.get("password") == "huyhieu123":
         db.query(models.Order).delete()
         db.commit()
@@ -175,7 +189,6 @@ def reset_data(data: dict, db: Session = Depends(get_db)):
 
 if __name__ == "__main__":
     import uvicorn
-    import os
-    # Lấy cổng từ hệ thống Cloud, nếu không có thì mặc định là 8000
+    # Tự động nhận diện PORT trên Render
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
