@@ -5,73 +5,80 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Menu Gọi Món - Việt Admin</title>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; padding: 15px; background: #f8f9fa; color: #333; margin: 0; }
-        .header { text-align: center; color: white; background: #28a745; padding: 20px; border-radius: 0 0 20px 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        .item { 
-            background: white; padding: 15px; margin-bottom: 12px; border-radius: 12px; 
-            display: flex; justify-content: space-between; align-items: center;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        }
-        .item-info { display: flex; flex-direction: column; }
-        .item-name { font-weight: bold; font-size: 1.1em; }
-        .item-price { color: #28a745; font-weight: bold; margin-top: 5px; }
+        body { font-family: 'Segoe UI', sans-serif; padding: 0; background: #f8f9fa; color: #333; margin: 0; }
+        .header { text-align: center; color: white; background: #28a745; padding: 25px 20px; border-radius: 0 0 25px 25px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
         
-        .order-controls { display: flex; align-items: center; gap: 10px; }
-        input[type="number"] { width: 45px; padding: 8px; border: 1px solid #ddd; border-radius: 8px; text-align: center; font-size: 1em; }
+        .item { 
+            background: white; padding: 12px; margin: 0 15px 15px 15px; border-radius: 15px; 
+            display: flex; align-items: center;
+            box-shadow: 0 3px 8px rgba(0,0,0,0.08);
+            transition: transform 0.2s;
+        }
+        .item:active { transform: scale(0.98); }
+        
+        /* Style cho ảnh món ăn phía khách hàng */
+        .item-img { 
+            width: 80px; height: 80px; border-radius: 12px; 
+            object-fit: cover; margin-right: 15px; background: #eee;
+        }
+
+        .item-info { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+        .item-name { font-weight: bold; font-size: 1.1em; color: #2c3e50; }
+        .item-price { color: #28a745; font-weight: bold; margin-top: 4px; font-size: 1em; }
+        
+        .order-controls { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+        input[type="number"] { width: 40px; padding: 6px; border: 1px solid #ddd; border-radius: 8px; text-align: center; font-size: 1em; }
         
         button { 
-            background: #28a745; color: white; border: none; padding: 10px 18px; 
+            background: #28a745; color: white; border: none; padding: 8px 15px; 
             border-radius: 10px; cursor: pointer; font-weight: bold; transition: 0.3s;
         }
-        button:active { transform: scale(0.9); background: #218838; }
+        button:active { background: #218838; }
+
+        #connection-status { font-size: 0.8em; margin-top: 8px; display: block; }
     </style>
 </head>
 <body>
     <div class="header">
         <h2 style="margin:0;">Bàn số: <span id="table-display">...</span></h2>
-        <small id="connection-status" style="opacity: 0.8;">Đang kết nối server...</small>
+        <small id="connection-status">● Đang kết nối server...</small>
     </div>
     
-    <div id="menu" style="padding: 10px;">
-        <p style="text-align: center;">Đang tải thực đơn xịn xò...</p>
+    <div id="menu">
+        <p style="text-align: center; color: #888;">Đang tải thực đơn xịn xò...</p>
     </div>
 
     <script>
-        // --- 1. CẤU HÌNH LINK RENDER ---
-        // Thay vì để nó tự đoán, mình dán trực tiếp link Render mà Việt vừa chạy thành công vào đây.
         const API_BASE = "https://ungdungorder-1.onrender.com"; 
-        const WS_URL = API_BASE.replace("https", "wss"); // Dùng wss cho bảo mật khi chạy trên Render
+        const WS_URL = API_BASE.replace("https", "wss");
 
         const params = new URLSearchParams(window.location.search);
         const tableNo = params.get('table') || "0";
         document.getElementById('table-display').innerText = tableNo;
 
-        // --- 2. KẾT NỐI WEBSOCKET ---
         let socket;
         function connectWS() {
-            // Lưu ý: Route /ws/admin phải khớp với backend của Việt
             socket = new WebSocket(`${WS_URL}/ws/admin`);
             
             socket.onopen = () => {
-                document.getElementById('connection-status').innerText = "● Đã kết nối";
-                document.getElementById('connection-status').style.color = "white";
+                document.getElementById('connection-status').innerText = "● Đã kết nối trực tuyến";
+                document.getElementById('connection-status').style.color = "#d1ffd6";
             };
 
             socket.onmessage = function(event) {
                 const data = JSON.parse(event.data);
                 if (data.type === "menu_update") {
-                    console.log("Thực đơn đã cập nhật từ Admin!");
                     loadMenu(); 
                 }
             };
 
             socket.onclose = () => {
                 document.getElementById('connection-status').innerText = "○ Mất kết nối, đang thử lại...";
-                setTimeout(connectWS, 5000); // Thử lại sau 5 giây
+                document.getElementById('connection-status').style.color = "#ffcccc";
+                setTimeout(connectWS, 5000);
             };
         }
 
-        // --- 3. HÀM LẤY MENU ---
         async function loadMenu() {
             try {
                 const res = await fetch(`${API_BASE}/api/products`);
@@ -81,12 +88,13 @@
                 const menuDiv = document.getElementById('menu');
                 
                 if (products.length === 0) {
-                    menuDiv.innerHTML = "<p style='text-align:center;'>Chưa có món nào. Đợi Admin xíu nhé!</p>";
+                    menuDiv.innerHTML = "<p style='text-align:center; padding: 20px; color: #888;'>Chưa có món nào. Đợi Admin xíu nhé!</p>";
                     return;
                 }
 
                 menuDiv.innerHTML = products.map((p, index) => `
                     <div class="item">
+                        <img src="${p.image || 'https://via.placeholder.com/100'}" class="item-img" onerror="this.src='https://via.placeholder.com/100'">
                         <div class="item-info">
                             <span class="item-name">${p.name}</span>
                             <span class="item-price">${p.price.toLocaleString()}đ</span>
@@ -98,12 +106,10 @@
                     </div>
                 `).join('');
             } catch (error) {
-                document.getElementById('menu').innerHTML = "<p style='text-align:center; color:red;'>Lỗi kết nối server Render!</p>";
-                console.error("Lỗi fetch menu:", error);
+                document.getElementById('menu').innerHTML = "<p style='text-align:center; color:red; padding: 20px;'>Lỗi kết nối server!</p>";
             }
         }
 
-        // --- 4. HÀM ĐẶT MÓN ---
         async function order(itemName, qtyId) {
             const quantity = document.getElementById(qtyId).value;
             if (quantity < 1) return alert("Số lượng phải ít nhất là 1 chứ!");
@@ -124,16 +130,15 @@
                 const result = await response.json();
 
                 if (response.ok && result.status === "success") {
-                    alert(`✅ Tuyệt vời! Đã báo Admin làm ${quantity} ${itemName} cho Bàn ${tableNo} rồi nhé.`);
+                    alert(`✅ Đã xong! Bàn ${tableNo} đợi xíu nhé, món ${itemName} đang được chuẩn bị.`);
                 } else {
-                    alert('❌ Lỗi: ' + (result.msg || 'Không thể đặt món.'));
+                    alert('❌ Lỗi đặt món rồi Việt ơi!');
                 }
             } catch (error) {
-                alert('❌ Không thể gửi đơn. Có thể Server Render đang khởi động lại, Việt đợi 30s rồi thử lại nhé!');
+                alert('❌ Server đang bận, Việt thử lại sau 10 giây nhé!');
             }
         }
 
-        // Khởi động
         connectWS();
         loadMenu();
     </script>

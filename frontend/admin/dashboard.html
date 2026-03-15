@@ -6,7 +6,7 @@
     <style>
         :root { --primary-color: #007bff; --danger-color: #dc3545; --success-color: #28a745; --sidebar-bg: #1c1e21; }
         body { display: flex; margin: 0; font-family: 'Segoe UI', sans-serif; background: #f0f2f5; min-height: 100vh; }
-        .sidebar { width: 260px; background: var(--sidebar-bg); color: white; display: flex; flex-direction: column; position: fixed; height: 100vh; }
+        .sidebar { width: 260px; background: var(--sidebar-bg); color: white; display: flex; flex-direction: column; position: fixed; height: 100vh; z-index: 100; }
         .sidebar-header { padding: 20px; text-align: center; border-bottom: 1px solid #3a3b3c; font-weight: bold; font-size: 1.2em; }
         .menu { flex: 1; padding: 10px; display: flex; flex-direction: column; }
         .menu-item { padding: 15px; margin-bottom: 5px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 10px; transition: 0.3s; }
@@ -22,6 +22,11 @@
         .btn-success { background: var(--success-color); color: white; }
         .btn-danger { background: var(--danger-color); color: white; }
         input { padding: 12px; border: 1px solid #ddd; border-radius: 6px; width: 100%; margin-bottom: 10px; box-sizing: border-box; }
+        
+        /* Style cho ảnh món ăn */
+        .product-img-preview { width: 50px; height: 50px; border-radius: 8px; object-fit: cover; margin-right: 15px; background: #eee; }
+        .product-info { display: flex; align-items: center; }
+        
         #revenue-history { margin-top: 20px; }
         .history-item { border-left: 5px solid var(--success-color); }
         .status-online { color: #2ecc71; font-size: 0.8em; margin-top: 5px; }
@@ -51,11 +56,16 @@
         <div id="page-menu-mgmt" class="page">
             <h1>🍴 Quản lý thực đơn</h1>
             <div class="card">
-                <input type="text" id="p-name" placeholder="Tên món">
-                <input type="number" id="p-price" placeholder="Giá">
-                <button class="btn btn-success" onclick="addProduct()">Lưu món</button>
+                <h3>Thêm món mới</h3>
+                <input type="text" id="p-name" placeholder="Tên món (ví dụ: Cà phê muối)">
+                <input type="number" id="p-price" placeholder="Giá (ví dụ: 25000)">
+                <input type="text" id="p-image" placeholder="Link hình ảnh (dán link từ web hoặc kho ảnh)">
+                <button class="btn btn-success" onclick="addProduct()">Lưu vào Menu</button>
             </div>
-            <div class="card"><ul id="product-list-admin"></ul></div>
+            <div class="card">
+                <h3>Danh sách món hiện có</h3>
+                <ul id="product-list-admin"></ul>
+            </div>
         </div>
 
         <div id="page-revenue" class="page">
@@ -71,14 +81,13 @@
             <h1>⚠️ Reset hệ thống</h1>
             <div class="card">
                 <p style="color: #666;">Nhập mật khẩu để xóa sạch lịch sử đơn hàng và doanh thu.</p>
-                <input type="password" id="reset-password" placeholder="Mật khẩu Admin (mặc định: 123)">
+                <input type="password" id="reset-password" placeholder="Mật khẩu Admin">
                 <button class="btn btn-danger" onclick="handleReset()">Xác nhận xóa sạch đơn</button>
             </div>
         </div>
     </div>
 
     <script>
-        // --- CẤU HÌNH KẾT NỐI RENDER ---
         const API_BASE = "https://ungdungorder-1.onrender.com";
         const WS_URL = API_BASE.replace("https", "wss");
 
@@ -90,24 +99,19 @@
             connectWS();
         };
 
-        // --- KẾT NỐI WEBSOCKET NHẬN ĐƠN REALTIME ---
         function connectWS() {
             socket = new WebSocket(`${WS_URL}/ws/admin`);
-            
             socket.onopen = () => {
                 document.getElementById('conn-status').innerText = "● Đang trực tuyến";
                 document.getElementById('conn-status').style.color = "#2ecc71";
             };
-
             socket.onmessage = function(event) {
                 const data = JSON.parse(event.data);
                 if (data.type === "new_order") {
                     addOrderToUI(data);
-                    // Tiếng ting ting khi có đơn
                     new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3').play().catch(()=>{});
                 }
             };
-
             socket.onclose = () => {
                 document.getElementById('conn-status').innerText = "○ Mất kết nối, thử lại...";
                 document.getElementById('conn-status').style.color = "#e74c3c";
@@ -122,22 +126,20 @@
                     const orders = await response.json();
                     orders.forEach(order => addOrderToUI(order));
                 }
-            } catch (e) { console.error("Lỗi khi load đơn hàng:", e); }
+            } catch (e) { console.error(e); }
         }
 
         function addOrderToUI(data) {
             if (displayedOrders.has(data.id)) return;
-
             const list = document.getElementById('order-list');
             const li = document.createElement('li');
             li.className = 'list-item';
             li.id = `order-${data.id}`;
-            
             const name = data.item_name || data.item;
 
             li.innerHTML = `
                 <div>
-                    <strong>Bàn ${data.table}</strong>: ${name} (x${data.quantity || 1})<br>
+                    <strong>Bàn ${data.table}</strong>: ${name} (x${data.quantity})<br>
                     <small style="color: #666;">Lúc: ${data.time || ''}</small>
                 </div>
                 <button class="btn btn-success" onclick="markDone(${data.id})">Xong</button>
@@ -146,14 +148,11 @@
             displayedOrders.add(data.id);
         }
 
-        // --- CÁC HÀM XỬ LÝ KHÁC ---
         async function markDone(id) {
             const res = await fetch(`${API_BASE}/api/orders/${id}/complete`, { method: 'POST' });
             if (res.ok) {
-                const element = document.getElementById(`order-${id}`);
-                if (element) element.remove();
+                document.getElementById(`order-${id}`).remove();
                 displayedOrders.delete(id);
-                if(document.getElementById('page-revenue').classList.contains('active')) loadRevenue();
             }
         }
 
@@ -169,7 +168,13 @@
             const products = await res.json();
             document.getElementById('product-list-admin').innerHTML = products.map(p => `
                 <li class="list-item">
-                    <span>${p.name} - ${p.price.toLocaleString()}đ</span>
+                    <div class="product-info">
+                        <img src="${p.image || 'https://via.placeholder.com/50'}" class="product-img-preview" onerror="this.src='https://via.placeholder.com/50'">
+                        <div>
+                            <strong>${p.name}</strong><br>
+                            <small>${p.price.toLocaleString()}đ</small>
+                        </div>
+                    </div>
                     <button class="btn btn-danger" onclick="deleteProduct('${p.name}')">Xóa</button>
                 </li>
             `).join('');
@@ -178,50 +183,51 @@
         async function addProduct() {
             const name = document.getElementById('p-name').value;
             const price = document.getElementById('p-price').value;
-            if(!name || !price) return alert("Nhập đủ tên và giá!");
+            const image = document.getElementById('p-image').value;
+            
+            if(!name || !price) return alert("Việt ơi, nhập đủ tên và giá nhé!");
+            
             await fetch(`${API_BASE}/api/admin/products`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ name, price: parseInt(price) })
+                body: JSON.stringify({ name, price: parseInt(price), image: image })
             });
+            
+            // Xóa trắng ô nhập sau khi lưu
             document.getElementById('p-name').value = "";
             document.getElementById('p-price').value = "";
+            document.getElementById('p-image').value = "";
             loadProductMgmt();
         }
 
         async function deleteProduct(name) {
-            if (!confirm(`Xóa món "${name}"?`)) return;
-            const res = await fetch(`${API_BASE}/api/admin/products/${encodeURIComponent(name)}`, { method: 'DELETE' });
-            if (res.ok) loadProductMgmt();
+            if (!confirm(`Xóa món "${name}" khỏi menu?`)) return;
+            await fetch(`${API_BASE}/api/admin/products/${encodeURIComponent(name)}`, { method: 'DELETE' });
+            loadProductMgmt();
         }
 
         async function loadRevenue() {
-            try {
-                const res = await fetch(`${API_BASE}/api/admin/revenue`);
-                const data = await res.json();
-                document.getElementById('total-revenue').innerText = data.revenue.toLocaleString();
-                const historyDiv = document.getElementById('revenue-history');
-                historyDiv.innerHTML = data.history && data.history.length > 0 
-                    ? data.history.map(item => `
-                        <div class="list-item history-item">
-                            <div><strong>Bàn ${item.table}</strong>: ${item.item} (x${item.qty})<br><small>${item.time}</small></div>
-                            <div style="font-weight: bold; color: var(--success-color);">+${item.amount.toLocaleString()}đ</div>
-                        </div>`).reverse().join('')
-                    : "<p style='text-align:center; color:#888;'>Chưa có đơn hàng nào.</p>";
-            } catch (e) { console.error("Lỗi load doanh thu:", e); }
+            const res = await fetch(`${API_BASE}/api/admin/revenue`);
+            const data = await res.json();
+            document.getElementById('total-revenue').innerText = data.revenue.toLocaleString();
+            const historyDiv = document.getElementById('revenue-history');
+            historyDiv.innerHTML = data.history.map(item => `
+                <div class="list-item history-item">
+                    <div><strong>Bàn ${item.table}</strong>: ${item.item}<br><small>${item.time}</small></div>
+                    <div style="font-weight: bold; color: var(--success-color);">+${item.amount.toLocaleString()}đ</div>
+                </div>`).reverse().join('');
         }
 
         async function handleReset() {
             const password = document.getElementById('reset-password').value;
-            if(!password) return alert("Vui lòng nhập mật khẩu!");
-            if(!confirm("XÓA SẠCH toàn bộ dữ liệu?")) return;
+            if(!password) return alert("Nhập mật khẩu đã!");
             const res = await fetch(`${API_BASE}/api/admin/reset`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ password })
             });
-            if (res.ok) { alert("✅ Đã xóa sạch!"); location.reload(); }
-            else { alert("❌ Sai mật khẩu!"); }
+            if (res.ok) { alert("Đã xóa sạch!"); location.reload(); }
+            else { alert("Sai mật khẩu rồi Việt ơi!"); }
         }
     </script>
 </body>

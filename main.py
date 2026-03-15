@@ -1,5 +1,5 @@
 # File: main.py
-# Hệ thống Quản lý Order - Việt Admin
+# Hệ thống Quản lý Order - Việt Admin (Cập nhật: Hỗ trợ Hình ảnh)
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -16,7 +16,7 @@ models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-# --- CẤU HÌNH CORS (Rất quan trọng để GitHub Pages kết nối được) ---
+# --- CẤU HÌNH CORS ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -39,7 +39,6 @@ class ConnectionManager:
             self.active_connections.remove(websocket)
 
     async def notify_all(self, message: dict):
-        # Tạo danh sách các kết nối lỗi để xóa sau khi lặp
         dead_connections = []
         for connection in self.active_connections:
             try:
@@ -52,7 +51,6 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-# Thêm route mặc định để tránh lỗi "Not Found" khi vào trang chủ Render
 @app.get("/")
 def home():
     return {"status": "Online", "message": "Viet Order Backend is running!"}
@@ -62,8 +60,7 @@ async def admin_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            # Giữ kết nối sống (Heartbeat)
-            data = await websocket.receive_text()
+            await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
     except Exception:
@@ -92,6 +89,7 @@ async def receive_order(order_data: dict, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(new_order)
 
+        # Gửi thông báo có đơn mới kèm thông tin cho Admin
         payload = {
             "type": "new_order",
             "id": new_order.id,
@@ -107,6 +105,30 @@ async def receive_order(order_data: dict, db: Session = Depends(get_db)):
 
 # --- API QUẢN TRỊ ---
 
+@app.post("/api/admin/products")
+async def add_product(data: dict, db: Session = Depends(get_db)):
+    # Tìm xem món này đã có chưa
+    existing_p = db.query(models.Product).filter(models.Product.name == data['name']).first()
+    
+    # Lấy link ảnh từ dữ liệu gửi lên (nếu không có thì để trống)
+    image_url = data.get('image', '')
+
+    if existing_p:
+        existing_p.price = float(data['price'])
+        existing_p.image = image_url # Cập nhật ảnh mới
+    else:
+        # Thêm món mới kèm link ảnh
+        new_p = models.Product(
+            name=data['name'], 
+            price=float(data['price']), 
+            image=image_url
+        )
+        db.add(new_p)
+    
+    db.commit()
+    await manager.notify_all({"type": "menu_update"})
+    return {"status": "success"}
+
 @app.get("/api/admin/pending-orders")
 def get_pending_orders(db: Session = Depends(get_db)):
     orders = db.query(models.Order).filter(models.Order.status == "pending").all()
@@ -119,18 +141,6 @@ def get_pending_orders(db: Session = Depends(get_db)):
             "time": o.created_at.strftime("%H:%M:%S") if o.created_at else ""
         } for o in orders
     ]
-
-@app.post("/api/admin/products")
-async def add_product(data: dict, db: Session = Depends(get_db)):
-    existing_p = db.query(models.Product).filter(models.Product.name == data['name']).first()
-    if existing_p:
-        existing_p.price = float(data['price'])
-    else:
-        new_p = models.Product(name=data['name'], price=float(data['price']), image="")
-        db.add(new_p)
-    db.commit()
-    await manager.notify_all({"type": "menu_update"})
-    return {"status": "success"}
 
 @app.delete("/api/admin/products/{product_name}")
 async def delete_product(product_name: str, db: Session = Depends(get_db)):
@@ -179,7 +189,6 @@ def get_revenue(db: Session = Depends(get_db)):
 
 @app.post("/api/admin/reset")
 def reset_data(data: dict, db: Session = Depends(get_db)):
-    # Đã sửa mật khẩu theo ý của bạn: huyhieu123
     if data.get("password") == "huyhieu123":
         db.query(models.Order).delete()
         db.commit()
@@ -189,6 +198,5 @@ def reset_data(data: dict, db: Session = Depends(get_db)):
 
 if __name__ == "__main__":
     import uvicorn
-    # Tự động nhận diện PORT trên Render
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
