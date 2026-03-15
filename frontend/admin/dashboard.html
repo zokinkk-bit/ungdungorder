@@ -2,12 +2,12 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <title>Hệ thống Quản lý Order - Việt Admin</title>
+    <title>Quản lý - Việt Order</title>
     <style>
         :root { --primary-color: #007bff; --danger-color: #dc3545; --success-color: #28a745; --sidebar-bg: #1c1e21; }
         body { display: flex; margin: 0; font-family: 'Segoe UI', sans-serif; background: #f0f2f5; min-height: 100vh; }
         .sidebar { width: 260px; background: var(--sidebar-bg); color: white; display: flex; flex-direction: column; position: fixed; height: 100vh; z-index: 100; }
-        .sidebar-header { padding: 20px; text-align: center; border-bottom: 1px solid #3a3b3c; font-weight: bold; font-size: 1.2em; }
+        .sidebar-header { padding: 20px; text-align: center; border-bottom: 1px solid #3a3b3c; }
         .menu { flex: 1; padding: 10px; display: flex; flex-direction: column; }
         .menu-item { padding: 15px; margin-bottom: 5px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 10px; transition: 0.3s; }
         .menu-item:hover { background: #3a3b3c; }
@@ -17,37 +17,26 @@
         .page { display: none; }
         .page.active { display: block; }
         .card { background: white; border-radius: 12px; padding: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; }
-        .list-item { background: white; border-radius: 10px; padding: 15px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .list-item { background: white; border-radius: 10px; padding: 15px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
         .btn { padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
         .btn-success { background: var(--success-color); color: white; }
         .btn-danger { background: var(--danger-color); color: white; }
         input { padding: 12px; border: 1px solid #ddd; border-radius: 6px; width: 100%; margin-bottom: 10px; box-sizing: border-box; }
-        
-        /* Style cho nút chọn file */
-        .file-input-wrapper { margin-bottom: 15px; }
-        .file-input-label { display: block; margin-bottom: 5px; font-weight: bold; color: #555; font-size: 0.9em; }
-        input[type="file"] { padding: 8px; background: #fff; border: 1px dashed var(--primary-color); }
-
         .product-img-preview { width: 50px; height: 50px; border-radius: 8px; object-fit: cover; margin-right: 15px; background: #eee; }
         .product-info { display: flex; align-items: center; }
-        
-        #revenue-history { margin-top: 20px; }
-        .history-item { border-left: 5px solid var(--success-color); }
-        .status-online { color: #2ecc71; font-size: 0.8em; margin-top: 5px; }
     </style>
 </head>
 <body>
 
     <div class="sidebar">
         <div class="sidebar-header">
-            VIỆT ORDER ADMIN
-            <div id="conn-status" class="status-online">Đang kết nối...</div>
+            <strong id="display-shop-name">...</strong><br>
+            <small id="conn-status" style="color: #888;">Đang kết nối...</small>
         </div>
         <div class="menu">
             <div class="menu-item active" onclick="switchPage('page-orders', this)">📦 Đơn hàng mới</div>
             <div class="menu-item" onclick="switchPage('page-menu-mgmt', this); loadProductMgmt();">🍴 Quản lý Menu</div>
-            <div class="menu-item" onclick="switchPage('page-revenue', this); loadRevenue();">💰 Doanh thu</div>
-            <div class="menu-item danger" onclick="switchPage('page-reset', this)">⚠️ Reset Dữ liệu</div>
+            <div class="menu-item danger" onclick="handleLogout()">🚪 Đăng xuất</div>
         </div>
     </div>
 
@@ -61,14 +50,9 @@
             <h1>🍴 Quản lý thực đơn</h1>
             <div class="card">
                 <h3>Thêm món mới</h3>
-                <input type="text" id="p-name" placeholder="Tên món (ví dụ: Cà phê muối)">
-                <input type="number" id="p-price" placeholder="Giá (ví dụ: 25000)">
-                
-                <div class="file-input-wrapper">
-                    <label class="file-input-label">Chọn ảnh từ máy (Dưới 1MB):</label>
-                    <input type="file" id="p-image-file" accept="image/*">
-                </div>
-                
+                <input type="text" id="p-name" placeholder="Tên món">
+                <input type="number" id="p-price" placeholder="Giá">
+                <input type="file" id="p-image-file" accept="image/*">
                 <button class="btn btn-success" onclick="addProduct()">Lưu vào Menu</button>
             </div>
             <div class="card">
@@ -76,29 +60,16 @@
                 <ul id="product-list-admin"></ul>
             </div>
         </div>
-
-        <div id="page-revenue" class="page">
-            <h1>💰 Thống kê doanh thu</h1>
-            <div class="card">
-                <h2>Tổng doanh thu: <span id="total-revenue" style="color: var(--success-color);">0</span>đ</h2>
-            </div>
-            <h3>Lịch sử đơn hàng đã bán:</h3>
-            <div id="revenue-history"></div>
-        </div>
-
-        <div id="page-reset" class="page">
-            <h1>⚠️ Reset hệ thống</h1>
-            <div class="card">
-                <p style="color: #666;">Nhập mật khẩu để xóa sạch lịch sử đơn hàng và doanh thu.</p>
-                <input type="password" id="reset-password" placeholder="Mật khẩu Admin">
-                <button class="btn btn-danger" onclick="handleReset()">Xác nhận xóa sạch đơn</button>
-            </div>
-        </div>
     </div>
 
     <script>
         const API_BASE = "https://ungdungorder-1.onrender.com";
         const WS_URL = API_BASE.replace("https", "wss");
+
+        // Lấy thông tin quán từ localStorage
+        const currentOwner = localStorage.getItem('owner_id');
+        if (!currentOwner) { window.location.href = "login.html"; }
+        document.getElementById('display-shop-name').innerText = currentOwner.toUpperCase();
 
         let socket;
         let displayedOrders = new Set();
@@ -109,7 +80,8 @@
         };
 
         function connectWS() {
-            socket = new WebSocket(`${WS_URL}/ws/admin`);
+            // Nâng cấp: WebSocket giờ đây kết nối theo ID quán
+            socket = new WebSocket(`${WS_URL}/ws/${currentOwner}`);
             socket.onopen = () => {
                 document.getElementById('conn-status').innerText = "● Đang trực tuyến";
                 document.getElementById('conn-status').style.color = "#2ecc71";
@@ -122,20 +94,18 @@
                 }
             };
             socket.onclose = () => {
-                document.getElementById('conn-status').innerText = "○ Mất kết nối, thử lại...";
+                document.getElementById('conn-status').innerText = "○ Mất kết nối...";
                 document.getElementById('conn-status').style.color = "#e74c3c";
                 setTimeout(connectWS, 5000);
             };
         }
 
         async function loadPendingOrders() {
-            try {
-                const response = await fetch(`${API_BASE}/api/admin/pending-orders`);
-                if (response.ok) {
-                    const orders = await response.json();
-                    orders.forEach(order => addOrderToUI(order));
-                }
-            } catch (e) { console.error(e); }
+            const res = await fetch(`${API_BASE}/api/admin/pending-orders/${currentOwner}`);
+            if (res.ok) {
+                const orders = await res.json();
+                orders.forEach(order => addOrderToUI(order));
+            }
         }
 
         function addOrderToUI(data) {
@@ -144,25 +114,71 @@
             const li = document.createElement('li');
             li.className = 'list-item';
             li.id = `order-${data.id}`;
-            const name = data.item_name || data.item;
-
             li.innerHTML = `
-                <div>
-                    <strong>Bàn ${data.table}</strong>: ${name} (x${data.quantity})<br>
-                    <small style="color: #666;">Lúc: ${data.time || ''}</small>
-                </div>
+                <div><strong>Bàn ${data.table}</strong>: ${data.item} (x${data.quantity})</div>
                 <button class="btn btn-success" onclick="markDone(${data.id})">Xong</button>
             `;
             list.prepend(li);
             displayedOrders.add(data.id);
         }
 
-        async function markDone(id) {
-            const res = await fetch(`${API_BASE}/api/orders/${id}/complete`, { method: 'POST' });
-            if (res.ok) {
-                document.getElementById(`order-${id}`).remove();
-                displayedOrders.delete(id);
+        async function addProduct() {
+            const name = document.getElementById('p-name').value;
+            const price = document.getElementById('p-price').value;
+            const fileInput = document.getElementById('p-image-file');
+            
+            if(!name || !price) return alert("Nhập đủ thông tin!");
+
+            let base64Image = "";
+            if (fileInput.files.length > 0) {
+                base64Image = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result);
+                    reader.readAsDataURL(fileInput.files[0]);
+                });
             }
+            
+            await fetch(`${API_BASE}/api/admin/products`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ 
+                    name, 
+                    price: parseInt(price), 
+                    image: base64Image,
+                    owner: currentOwner // Gửi kèm ID quán
+                })
+            });
+            alert("Đã thêm!");
+            loadProductMgmt();
+        }
+
+        async function loadProductMgmt() {
+            const res = await fetch(`${API_BASE}/api/products/${currentOwner}`);
+            const products = await res.json();
+            document.getElementById('product-list-admin').innerHTML = products.map(p => `
+                <li class="list-item">
+                    <div class="product-info">
+                        <img src="${p.image || 'https://via.placeholder.com/50'}" class="product-img-preview">
+                        <div><strong>${p.name}</strong><br><small>${p.price}đ</small></div>
+                    </div>
+                    <button class="btn btn-danger" onclick="deleteProduct('${p.name}')">Xóa</button>
+                </li>
+            `).join('');
+        }
+
+        async function deleteProduct(name) {
+            await fetch(`${API_BASE}/api/admin/products/${currentOwner}/${encodeURIComponent(name)}`, { method: 'DELETE' });
+            loadProductMgmt();
+        }
+
+        async function markDone(id) {
+            await fetch(`${API_BASE}/api/orders/${id}/complete`, { method: 'POST' });
+            document.getElementById(`order-${id}`).remove();
+        }
+
+        function handleLogout() {
+            localStorage.removeItem('owner_id');
+            window.location.href = "login.html";
         }
 
         function switchPage(pageId, element) {
@@ -170,95 +186,6 @@
             document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
             document.getElementById(pageId).classList.add('active');
             element.classList.add('active');
-        }
-
-        async function loadProductMgmt() {
-            const res = await fetch(`${API_BASE}/api/products`);
-            const products = await res.json();
-            document.getElementById('product-list-admin').innerHTML = products.map(p => `
-                <li class="list-item">
-                    <div class="product-info">
-                        <img src="${p.image || 'https://via.placeholder.com/50'}" class="product-img-preview" onerror="this.src='https://via.placeholder.com/50'">
-                        <div>
-                            <strong>${p.name}</strong><br>
-                            <small>${p.price.toLocaleString()}đ</small>
-                        </div>
-                    </div>
-                    <button class="btn btn-danger" onclick="deleteProduct('${p.name}')">Xóa</button>
-                </li>
-            `).join('');
-        }
-
-        // HÀM MỚI: Xử lý chọn ảnh từ máy
-        async function addProduct() {
-            const name = document.getElementById('p-name').value;
-            const price = document.getElementById('p-price').value;
-            const fileInput = document.getElementById('p-image-file');
-            
-            if(!name || !price) return alert("Việt ơi, nhập đủ tên và giá nhé!");
-
-            let base64Image = "";
-
-            if (fileInput.files.length > 0) {
-                const file = fileInput.files[0];
-                if (file.size > 1024 * 1024) {
-                    return alert("Ảnh nặng quá Việt ơi! Chọn ảnh dưới 1MB cho mượt nhé.");
-                }
-
-                base64Image = await new Promise((resolve) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => resolve(reader.result);
-                    reader.readAsDataURL(file);
-                });
-            }
-            
-            try {
-                const res = await fetch(`${API_BASE}/api/admin/products`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ name, price: parseInt(price), image: base64Image })
-                });
-
-                if (res.ok) {
-                    alert("✅ Đã thêm món mới thành công!");
-                    document.getElementById('p-name').value = "";
-                    document.getElementById('p-price').value = "";
-                    document.getElementById('p-image-file').value = "";
-                    loadProductMgmt();
-                }
-            } catch (e) {
-                alert("❌ Lỗi kết nối server rồi!");
-            }
-        }
-
-        async function deleteProduct(name) {
-            if (!confirm(`Xóa món "${name}" khỏi menu?`)) return;
-            await fetch(`${API_BASE}/api/admin/products/${encodeURIComponent(name)}`, { method: 'DELETE' });
-            loadProductMgmt();
-        }
-
-        async function loadRevenue() {
-            const res = await fetch(`${API_BASE}/api/admin/revenue`);
-            const data = await res.json();
-            document.getElementById('total-revenue').innerText = data.revenue.toLocaleString();
-            const historyDiv = document.getElementById('revenue-history');
-            historyDiv.innerHTML = data.history.map(item => `
-                <div class="list-item history-item">
-                    <div><strong>Bàn ${item.table}</strong>: ${item.item}<br><small>${item.time}</small></div>
-                    <div style="font-weight: bold; color: var(--success-color);">+${item.amount.toLocaleString()}đ</div>
-                </div>`).reverse().join('');
-        }
-
-        async function handleReset() {
-            const password = document.getElementById('reset-password').value;
-            if(!password) return alert("Nhập mật khẩu đã!");
-            const res = await fetch(`${API_BASE}/api/admin/reset`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ password })
-            });
-            if (res.ok) { alert("Đã xóa sạch!"); location.reload(); }
-            else { alert("Sai mật khẩu rồi Việt ơi!"); }
         }
     </script>
 </body>

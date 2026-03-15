@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Đăng nhập - Việt Order</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .login-card { background: white; padding: 40px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
+        h2 { color: #1c1e21; margin-bottom: 10px; }
+        p { color: #606770; margin-bottom: 25px; }
+        input { width: 100%; padding: 12px; margin-bottom: 20px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
+        button { width: 100%; padding: 12px; background: #007bff; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 16px; transition: 0.3s; }
+        button:hover { background: #0056b3; }
+    </style>
+</head>
+<body>
+
+    <div class="login-card">
+        <h2>Việt Order Admin</h2>
+        <p>Nhập tên quán để quản lý đơn hàng</p>
+        <input type="text" id="shop-name" placeholder="Ví dụ: viet_cafe, quan_te01...">
+        <button onclick="handleLogin()">Vào hệ thống</button>
+    </div>
+
+    <script>
+        function handleLogin() {
+            const shopName = document.getElementById('shop-name').value.trim();
+            if (!shopName) return alert("Việt ơi, nhập tên quán đã nhé!");
+
+            // Lưu tên quán vào bộ nhớ trình duyệt (localStorage)
+            localStorage.setItem('owner_id', shopName);
+
+            // Chuyển hướng sang trang quản lý
+            window.location.href = "dashboard.html";
+        }
+    </script>
+</body>
+</html>

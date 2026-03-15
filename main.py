@@ -1,202 +1,122 @@
-# File: main.py
-# Hệ thống Quản lý Order - Việt Admin (Cập nhật: Hỗ trợ Hình ảnh)
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
-from datetime import datetime
-import urllib.parse
-import json
-import os
-
-import models
-from database import engine, get_db
-
-# Khởi tạo database
-models.Base.metadata.create_all(bind=engine)
+from pydantic import BaseModel
+from typing import List, Dict
+import datetime
 
 app = FastAPI()
 
-# --- CẤU HÌNH CORS ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
-    allow_credentials=True,
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# --- QUẢN LÝ WEBSOCKET ---
+# --- DATABASE TẠM THỜI (Sẽ mất khi Render restart, nhưng dùng tốt cho lúc này) ---
+# Cấu trúc mới: Mỗi dữ liệu đều có 'owner'
+products = [] # Ví dụ: {"name": "Cafe", "price": 20000, "owner": "viet_admin", "image": "..."}
+orders = []   # Ví dụ: {"id": 1, "table": "5", "item": "Cafe", "owner": "viet_admin", "status": "pending"}
+
+# Quản lý kết nối WebSocket cho từng chủ quán
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: list[WebSocket] = []
+        # Lưu kết nối theo owner: { "viet_admin": [ws1, ws2], "quan_khac": [ws3] }
+        self.active_connections: Dict[str, List[WebSocket]] = {}
 
-    async def connect(self, websocket: WebSocket):
+    async def connect(self, websocket: WebSocket, owner: str):
         await websocket.accept()
-        self.active_connections.append(websocket)
+        if owner not in self.active_connections:
+            self.active_connections[owner] = []
+        self.active_connections[owner].append(websocket)
 
-    def disconnect(self, websocket: WebSocket):
-        if websocket in self.active_connections:
-            self.active_connections.remove(websocket)
+    def disconnect(self, websocket: WebSocket, owner: str):
+        if owner in self.active_connections:
+            self.active_connections[owner].remove(websocket)
 
-    async def notify_all(self, message: dict):
-        dead_connections = []
-        for connection in self.active_connections:
-            try:
+    async def send_personal_message(self, message: dict, owner: str):
+        if owner in self.active_connections:
+            for connection in self.active_connections[owner]:
                 await connection.send_json(message)
-            except:
-                dead_connections.append(connection)
-        
-        for dead in dead_connections:
-            self.disconnect(dead)
 
 manager = ConnectionManager()
 
-@app.get("/")
-def home():
-    return {"status": "Online", "message": "Viet Order Backend is running!"}
+# --- MODELS ---
+class Product(BaseModel):
+    name: str
+    price: int
+    image: str = ""
+    owner: str  # Bắt buộc có chủ sở hữu
 
-@app.websocket("/ws/admin")
-async def admin_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
+class Order(BaseModel):
+    table: str
+    item: str
+    quantity: int
+    owner: str  # Bắt buộc biết khách đặt ở quán nào
+
+# --- API CHO KHÁCH HÀNG ---
+
+# Lấy menu của một quán cụ thể
+@app.get("/api/products/{owner}")
+async def get_products(owner: str):
+    shop_menu = [p for p in products if p["owner"] == owner]
+    return shop_menu
+
+# Đặt món gửi kèm thông tin quán
+@app.post("/api/order")
+async def create_order(order: Order):
+    new_order = {
+        "id": len(orders) + 1,
+        "table": order.table,
+        "item": order.item,
+        "quantity": order.quantity,
+        "owner": order.owner,
+        "status": "pending",
+        "time": datetime.datetime.now().strftime("%H:%M:%S")
+    }
+    orders.append(new_order)
+    # Chỉ thông báo cho đúng chủ quán đó qua WebSocket
+    await manager.send_personal_message({"type": "new_order", **new_order}, order.owner)
+    return {"status": "success", "order_id": new_order["id"]}
+
+# --- API CHO ADMIN (QUẢN LÝ) ---
+
+# Thêm món vào menu của mình
+@app.post("/api/admin/products")
+async def add_product(product: Product):
+    products.append(product.dict())
+    # Thông báo để menu khách hàng tự cập nhật (nếu đang mở)
+    await manager.send_personal_message({"type": "menu_update"}, product.owner)
+    return {"status": "success"}
+
+# Lấy đơn hàng của riêng mình
+@app.get("/api/admin/pending-orders/{owner}")
+async def get_admin_orders(owner: str):
+    return [o for o in orders if o["owner"] == owner and o["status"] == "pending"]
+
+# Xong đơn
+@app.post("/api/orders/{order_id}/complete")
+async def complete_order(order_id: int):
+    for o in orders:
+        if o["id"] == order_id:
+            o["status"] = "completed"
+            return {"status": "success"}
+    raise HTTPException(status_code=404, detail="Order not found")
+
+# Xóa món của riêng mình
+@app.delete("/api/admin/products/{owner}/{name}")
+async def delete_product(owner: str, name: str):
+    global products
+    products = [p for p in products if not (p["name"] == name and p["owner"] == owner)]
+    await manager.send_personal_message({"type": "menu_update"}, owner)
+    return {"status": "success"}
+
+# --- WEBSOCKET ---
+@app.websocket("/ws/{owner}")
+async def websocket_endpoint(websocket: WebSocket, owner: str):
+    await manager.connect(websocket, owner)
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        manager.disconnect(websocket)
-    except Exception:
-        manager.disconnect(websocket)
-
-# --- API CHO KHÁCH HÀNG ---
-@app.get("/api/products")
-def get_products(db: Session = Depends(get_db)):
-    return db.query(models.Product).all()
-
-@app.post("/api/order")
-async def receive_order(order_data: dict, db: Session = Depends(get_db)):
-    try:
-        table = order_data.get('table', 0)
-        item = order_data.get('item', 'Món không tên')
-        qty = order_data.get('quantity', 1)
-
-        new_order = models.Order(
-            table_number=int(table),
-            item_name=item,
-            quantity=int(qty),
-            total_price=0.0,
-            status="pending"
-        )
-        db.add(new_order)
-        db.commit()
-        db.refresh(new_order)
-
-        # Gửi thông báo có đơn mới kèm thông tin cho Admin
-        payload = {
-            "type": "new_order",
-            "id": new_order.id,
-            "table": new_order.table_number,
-            "item_name": new_order.item_name,
-            "quantity": new_order.quantity,
-            "time": datetime.now().strftime("%H:%M:%S")
-        }
-        await manager.notify_all(payload)
-        return {"status": "success", "order_id": new_order.id}
-    except Exception as e:
-        return {"status": "error", "msg": str(e)}
-
-# --- API QUẢN TRỊ ---
-
-@app.post("/api/admin/products")
-async def add_product(data: dict, db: Session = Depends(get_db)):
-    # Tìm xem món này đã có chưa
-    existing_p = db.query(models.Product).filter(models.Product.name == data['name']).first()
-    
-    # Lấy link ảnh từ dữ liệu gửi lên (nếu không có thì để trống)
-    image_url = data.get('image', '')
-
-    if existing_p:
-        existing_p.price = float(data['price'])
-        existing_p.image = image_url # Cập nhật ảnh mới
-    else:
-        # Thêm món mới kèm link ảnh
-        new_p = models.Product(
-            name=data['name'], 
-            price=float(data['price']), 
-            image=image_url
-        )
-        db.add(new_p)
-    
-    db.commit()
-    await manager.notify_all({"type": "menu_update"})
-    return {"status": "success"}
-
-@app.get("/api/admin/pending-orders")
-def get_pending_orders(db: Session = Depends(get_db)):
-    orders = db.query(models.Order).filter(models.Order.status == "pending").all()
-    return [
-        {
-            "id": o.id,
-            "table": o.table_number,
-            "item_name": o.item_name,
-            "quantity": o.quantity,
-            "time": o.created_at.strftime("%H:%M:%S") if o.created_at else ""
-        } for o in orders
-    ]
-
-@app.delete("/api/admin/products/{product_name}")
-async def delete_product(product_name: str, db: Session = Depends(get_db)):
-    real_name = urllib.parse.unquote(product_name)
-    product = db.query(models.Product).filter(models.Product.name == real_name).first()
-    if product:
-        db.delete(product)
-        db.commit()
-        await manager.notify_all({"type": "menu_update"})
-        return {"status": "success"}
-    return {"status": "error"}
-
-@app.post("/api/orders/{order_id}/complete")
-def complete_order(order_id: int, db: Session = Depends(get_db)):
-    order = db.query(models.Order).filter(models.Order.id == order_id).first()
-    if order:
-        product = db.query(models.Product).filter(models.Product.name == order.item_name).first()
-        if product:
-            order.total_price = order.quantity * product.price
-            order.status = "completed"
-            db.commit()
-            return {"status": "success"}
-        else:
-            order.status = "completed"
-            db.commit()
-            return {"status": "error", "msg": "Không tìm thấy giá món"}
-    return {"status": "error"}
-
-@app.get("/api/admin/revenue")
-def get_revenue(db: Session = Depends(get_db)):
-    orders = db.query(models.Order).filter(models.Order.status == "completed").all()
-    total = sum(order.total_price for order in orders)
-    
-    return {
-        "revenue": total,
-        "history": [
-            {
-                "table": o.table_number,
-                "item": o.item_name,
-                "qty": o.quantity,
-                "amount": o.total_price,
-                "time": o.created_at.strftime("%H:%M") if o.created_at else "Vừa xong"
-            } for o in orders
-        ]
-    }
-
-@app.post("/api/admin/reset")
-def reset_data(data: dict, db: Session = Depends(get_db)):
-    if data.get("password") == "huyhieu123":
-        db.query(models.Order).delete()
-        db.commit()
-        return {"status": "success"}
-    else:
-        raise HTTPException(status_code=401, detail="Sai mật khẩu Admin!")
-
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port)
+        manager.disconnect(websocket, owner)

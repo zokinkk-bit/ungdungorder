@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Menu Gọi Món - Việt Admin</title>
+    <title>Menu Gọi Món - Việt Order</title>
     <style>
         body { font-family: 'Segoe UI', sans-serif; padding: 0; background: #f8f9fa; color: #333; margin: 0; }
         .header { text-align: center; color: white; background: #28a745; padding: 25px 20px; border-radius: 0 0 25px 25px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
@@ -16,7 +16,6 @@
         }
         .item:active { transform: scale(0.98); }
         
-        /* Style cho ảnh món ăn phía khách hàng */
         .item-img { 
             width: 80px; height: 80px; border-radius: 12px; 
             object-fit: cover; margin-right: 15px; background: #eee;
@@ -45,20 +44,24 @@
     </div>
     
     <div id="menu">
-        <p style="text-align: center; color: #888;">Đang tải thực đơn xịn xò...</p>
+        <p style="text-align: center; color: #888;">Đang tải thực đơn...</p>
     </div>
 
     <script>
         const API_BASE = "https://ungdungorder-1.onrender.com"; 
         const WS_URL = API_BASE.replace("https", "wss");
 
+        // LẤY THÔNG TIN TỪ URL: ?shop=ten_quan&table=5
         const params = new URLSearchParams(window.location.search);
         const tableNo = params.get('table') || "0";
+        const shopId = params.get('shop') || "viet_cafe"; // Nếu không có shop, mặc định là viet_cafe
+        
         document.getElementById('table-display').innerText = tableNo;
 
         let socket;
         function connectWS() {
-            socket = new WebSocket(`${WS_URL}/ws/admin`);
+            // Khách hàng kết nối vào luồng WebSocket của đúng quán đó
+            socket = new WebSocket(`${WS_URL}/ws/${shopId}`);
             
             socket.onopen = () => {
                 document.getElementById('connection-status').innerText = "● Đã kết nối trực tuyến";
@@ -81,14 +84,15 @@
 
         async function loadMenu() {
             try {
-                const res = await fetch(`${API_BASE}/api/products`);
+                // Chỉ lấy menu của đúng quán này
+                const res = await fetch(`${API_BASE}/api/products/${shopId}`);
                 if (!res.ok) throw new Error("Không lấy được dữ liệu");
                 
                 const products = await res.json();
                 const menuDiv = document.getElementById('menu');
                 
                 if (products.length === 0) {
-                    menuDiv.innerHTML = "<p style='text-align:center; padding: 20px; color: #888;'>Chưa có món nào. Đợi Admin xíu nhé!</p>";
+                    menuDiv.innerHTML = "<p style='text-align:center; padding: 20px; color: #888;'>Quán chưa đăng món nào. Việt nhắc chủ quán nhé!</p>";
                     return;
                 }
 
@@ -112,12 +116,13 @@
 
         async function order(itemName, qtyId) {
             const quantity = document.getElementById(qtyId).value;
-            if (quantity < 1) return alert("Số lượng phải ít nhất là 1 chứ!");
+            if (quantity < 1) return alert("Số lượng phải ít nhất là 1!");
 
             const data = {
                 table: tableNo,
                 item: itemName,
-                quantity: parseInt(quantity)
+                quantity: parseInt(quantity),
+                owner: shopId // Gửi kèm thông tin quán để server biết gửi cho ai
             };
 
             try {
@@ -130,12 +135,12 @@
                 const result = await response.json();
 
                 if (response.ok && result.status === "success") {
-                    alert(`✅ Đã xong! Bàn ${tableNo} đợi xíu nhé, món ${itemName} đang được chuẩn bị.`);
+                    alert(`✅ Đã xong! Món ${itemName} của Bàn ${tableNo} đang được chuẩn bị.`);
                 } else {
-                    alert('❌ Lỗi đặt món rồi Việt ơi!');
+                    alert('❌ Lỗi đặt món!');
                 }
             } catch (error) {
-                alert('❌ Server đang bận, Việt thử lại sau 10 giây nhé!');
+                alert('❌ Lỗi kết nối!');
             }
         }
 
